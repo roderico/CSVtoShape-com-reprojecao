@@ -1,0 +1,102 @@
+#!/bin/bash
+# funcoeszz
+#
+# INFORMAÇÕES: http://www.funcoeszz.net
+# NASCIMENTO : 27 de Agosto de 2015
+# AUTORES    : Roderico <superantigo arr0ba gmail ponto com>
+# DESCRIÇÃO  : Processamento em Lotes de Arquivos De Texto Simples (CSV)
+#              para WGS84 e depois para SIRGAS2000
+# LICENÇA    : GPLv3
+#
+#
+# 
+
+
+
+######## 1º PASSO: ###########
+
+#Gerador de Arquivos dbf
+
+for i in $( ls *csv ); do
+			# EPSG:4326 equivale a WGS_84
+			# ogr2ogr faz parte do pacote gdal
+	ogr2ogr -f "ESRI Shapefile"  -a_srs "EPSG:4326" $PWD  $i
+	done
+
+
+####### 2º PASSO: #############
+#Criação em lotes de arquivos vrt.
+# gerador_de_vrt.sh
+for i in $( ls *.dbf ); do
+	# $i-> nome do arquivo.
+	# ${i/dbf/vrt} --> troca dbf por vrt
+	# ${i%.dbf} --> exclui dbf
+		printf "<OGRVRTDataSource>\n" >> ${i/dbf/vrt}
+		printf "    <OGRVRTLayer name=\"${i%.dbf}\">\n" >> ${i/dbf/vrt}
+        printf "        <SrcDataSource>${i%.dbf}.csv</SrcDataSource>\n" >> ${i/dbf/vrt}
+        printf "        <GeometryType>wkbPoint</GeometryType>\n" >> ${i/dbf/vrt}
+        printf "        <LayerSRS>WGS84</LayerSRS>\n" >> ${i/dbf/vrt}
+        printf "        <GeometryField encoding=\"PointFromColumns\" x=\"Longitude\" y=\"Latitude\"/>\n" >> ${i/dbf/vrt}
+		printf "    </OGRVRTLayer>\n" >> ${i/dbf/vrt}
+		printf "</OGRVRTDataSource>\n" >> ${i/dbf/vrt}
+	done
+
+######## 3º PASSO: ###########
+# Script para criação em lotes de arquivos shape:
+# É possível fazer esse passo também através do QGIS,
+# na caixa de ferramentas de processamento.
+# 
+
+for i in $( ls *.vrt ); do
+# ${i/vrt/shp} --> Use a variável $i, mas troque vrt por shp
+	ogr2ogr -f "ESRI Shapefile" ${i/vrt/shp}  $i
+	done
+clear
+# Arquivos-Lixo:
+echo "	Posso apagar os arquivos *vrt gerados automaticamente por esse \
+script? (S/n)" | fmt -s
+read resp
+[ $resp == 'S' ] || [ $resp == 's' ] || [ $resp == 'Sim' ] || [ $resp == 'sim' ] && rm *vrt
+
+echo "	Posso apagar TODOS OS SEUS arquivos *csv deste diretório? (s/N)" | fmt -s
+read resp
+if [ $resp == 'S' ] || [ $resp == 's' ] || [ $resp == 'Sim' ] || [ $resp == 'sim' ]; then
+	echo "Confirme mais uma vez, por favor (s/N):"
+	read resp2
+	[ $resp2 == 'S' ] || [ $resp2 == 's' ] || [ $resp2 == 'Sim' ] || [ $resp2 == 'sim' ] && rm *csv 
+
+
+
+######## 4º PASSO: ##########
+# É possível fazer esse passo também através do QGIS,
+# na caixa de ferramentas de processamento.
+# É uma reprojeção de WGS_84 para SIRGAS 2000
+
+# Abaixo,  fazendo a reprojeção
+# usando ogr2ogr:
+echo -e "Digite o endereço no disco local para onde vc enviará os shapes reprojetados em SIRGAS2000:\t" | fmt -s
+read destino
+for i in $( ls *.shp ); do
+# "+proj=longlat +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +no_defs" --> SIRGAS2000
+# $destino${i/wgs84/sirgas2000} --> destino+ novo nome do shape
+# -nlt POINT --> tenho a menor idéia... =S
+ogr2ogr -t_srs "EPSG:4674" $destino${i/wgs84/sirgas2000} $i -nlt POINT
+
+exit 0
+
+
+# Um pouco de explicação sobre o ogr2ogr:
+#
+# Aqui ele gerará o arquivo dbf (Há um algoritmo de produção de
+# dbf em lotes por dentro do QGIS também ;) )
+# $~ ogr2ogr -f "ESRI Shapefile"  -a_srs "EPSG:4326" shape1 1-janeiro2004.csv
+# Flags:
+# -f --> formato do arquivo de saída
+# -a_srs --> Região/Codificação "EPSG:4326" == WGS84
+#
+# shape1 --> Diretório onde serão criados os arquivos
+# 1-janeiro2004.csv --> Arquivo-fonte
+#
+# Abaixo o comando para gerar o shape DE FATO a partir do dbf & desse
+# estranho arquivo vrt, que eu fiz um simples copia-e-cola na rede:
+# $~ ogr2ogr -f "ESRI Shapefile" 1-janeiro2004.shp  1-janeiro2004.vrt
